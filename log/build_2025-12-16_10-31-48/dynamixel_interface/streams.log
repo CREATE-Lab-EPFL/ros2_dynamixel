@@ -1,0 +1,60 @@
+[0.009s] Invoking command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake /home/vigno0405/github/HandVMC/ros2_dynamixel/src/dynamixel_interface -DCMAKE_INSTALL_PREFIX=/home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface
+[0.129s] -- The C compiler identification is GNU 11.4.0
+[0.220s] -- The CXX compiler identification is GNU 11.4.0
+[0.229s] -- Detecting C compiler ABI info
+[0.292s] -- Detecting C compiler ABI info - done
+[0.296s] -- Check for working C compiler: /usr/bin/cc - skipped
+[0.297s] -- Detecting C compile features
+[0.298s] -- Detecting C compile features - done
+[0.300s] -- Detecting CXX compiler ABI info
+[0.365s] -- Detecting CXX compiler ABI info - done
+[0.369s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.370s] -- Detecting CXX compile features
+[0.370s] -- Detecting CXX compile features - done
+[0.380s] -- Found ament_cmake: 1.3.12 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.504s] -- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter 
+[0.600s] -- Found rclcpp: 16.0.16 (/opt/ros/humble/share/rclcpp/cmake)
+[0.657s] -- Found rosidl_generator_c: 3.1.7 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.664s] -- Found rosidl_adapter: 3.1.7 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.674s] -- Found rosidl_generator_cpp: 3.1.7 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.691s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.714s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.769s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[0.774s] -- Found rmw_fastrtps_cpp: 6.2.9 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[0.855s] -- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "3.0.2")  
+[0.872s] -- Found FastRTPS: /opt/ros/humble/include  
+[0.896s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.906s] -- Looking for pthread.h
+[0.961s] -- Looking for pthread.h - found
+[0.961s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+[1.008s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+[1.009s] -- Found Threads: TRUE  
+[1.109s] -- Configuring done
+[1.114s] -- Generating done
+[1.116s] -- Build files have been written to: /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface
+[1.125s] Invoked command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake /home/vigno0405/github/HandVMC/ros2_dynamixel/src/dynamixel_interface -DCMAKE_INSTALL_PREFIX=/home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface
+[1.126s] Invoking command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface -- -j16 -l16
+[1.164s] [ 50%] [32mBuilding CXX object CMakeFiles/dynamixel_node.dir/src/dynamixel_node.cpp.o[0m
+[5.413s] [100%] [32m[1mLinking CXX executable dynamixel_node[0m
+[5.633s] [100%] Built target dynamixel_node
+[5.640s] Invoked command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface -- -j16 -l16
+[5.646s] Invoking command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface
+[5.650s] -- Install configuration: ""
+[5.650s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/lib/dynamixel_interface/dynamixel_node
+[5.651s] -- Set runtime path of "/home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/lib/dynamixel_interface/dynamixel_node" to ""
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/ament_index/resource_index/package_run_dependencies/dynamixel_interface
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/ament_index/resource_index/parent_prefix_path/dynamixel_interface
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/ament_prefix_path.sh
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/ament_prefix_path.dsv
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/path.sh
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/path.dsv
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.bash
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.sh
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.zsh
+[5.651s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.dsv
+[5.652s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/package.dsv
+[5.652s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/ament_index/resource_index/packages/dynamixel_interface
+[5.652s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/cmake/dynamixel_interfaceConfig.cmake
+[5.652s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/cmake/dynamixel_interfaceConfig-version.cmake
+[5.652s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/package.xml
+[5.653s] Invoked command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface

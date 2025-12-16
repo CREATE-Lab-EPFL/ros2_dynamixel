@@ -1,0 +1,23 @@
+[0.009s] Invoking command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface -- -j16 -l16
+[0.041s] [35m[1mConsolidate compiler generated dependencies of target dynamixel_node[0m
+[0.054s] [100%] Built target dynamixel_node
+[0.063s] Invoked command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface -- -j16 -l16
+[0.071s] Invoking command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface
+[0.078s] -- Install configuration: ""
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/lib/dynamixel_interface/dynamixel_node
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/ament_index/resource_index/package_run_dependencies/dynamixel_interface
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/ament_index/resource_index/parent_prefix_path/dynamixel_interface
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/ament_prefix_path.sh
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/ament_prefix_path.dsv
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/path.sh
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/environment/path.dsv
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.bash
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.sh
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.zsh
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/local_setup.dsv
+[0.078s] -- Installing: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/package.dsv
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/ament_index/resource_index/packages/dynamixel_interface
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/cmake/dynamixel_interfaceConfig.cmake
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/cmake/dynamixel_interfaceConfig-version.cmake
+[0.078s] -- Up-to-date: /home/vigno0405/github/HandVMC/ros2_dynamixel/install/dynamixel_interface/share/dynamixel_interface/package.xml
+[0.080s] Invoked command in '/home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/vigno0405/github/HandVMC/ros2_dynamixel/build/dynamixel_interface
