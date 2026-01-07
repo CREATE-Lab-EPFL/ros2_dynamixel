@@ -95,6 +95,10 @@ public:
         velocity_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
             "/joint_velocities", 10);
         
+        // Pre-allocate message objects to avoid allocations in loop
+        pos_msg_.data.reserve(motor_ids_.size());
+        vel_msg_.data.reserve(motor_ids_.size());
+        
         // 1ms timer (1000Hz) - achievable at 1Mbps with 2 motors
         // At 1Mbps: ~60 bytes per cycle = ~0.6ms, leaving headroom for processing
         timer_ = this->create_wall_timer(
@@ -207,34 +211,44 @@ private:
             }
         }
         
-        // Execute Sync Write
+        // Execute Sync Write (status return level = 1 means no response, so this is fast)
         syncWrite_->txPacket(); 
         
         // --- 2. Sync Read (State) ---
         // Execute Sync Read immediately after Sync Write
-        if (syncRead_->txRxPacket() != COMM_SUCCESS) return;
+        int comm_result = syncRead_->txRxPacket();
+        if (comm_result != COMM_SUCCESS) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
+                                 "SyncRead failed: %d", comm_result);
+            return;
+        }
         
-        auto pos_msg = std_msgs::msg::Float64MultiArray();
-        auto vel_msg = std_msgs::msg::Float64MultiArray();
-        pos_msg.data.resize(motor_ids_.size());
-        vel_msg.data.resize(motor_ids_.size());
+        // Reuse message objects to avoid allocations
+        pos_msg_.data.clear();
+        vel_msg_.data.clear();
+        pos_msg_.data.reserve(motor_ids_.size());
+        vel_msg_.data.reserve(motor_ids_.size());
         
         for (size_t i = 0; i < motor_ids_.size(); i++) {
-            if (!syncRead_->isAvailable(motor_ids_[i], ADDR_PRESENT_VELOCITY, 8)) return;
+            if (!syncRead_->isAvailable(motor_ids_[i], ADDR_PRESENT_VELOCITY, 8)) {
+                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                     "Data not available for motor %d", motor_ids_[i]);
+                return;
+            }
             
             // Position in degrees (re-calculation based on original)
             uint32_t position = syncRead_->getData(motor_ids_[i], ADDR_PRESENT_POSITION, 4);
             double absolute_rad = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI;
-            pos_msg.data[i] = (absolute_rad - initial_positions_[i]) * 180.0 / PI;
+            pos_msg_.data.push_back((absolute_rad - initial_positions_[i]) * 180.0 / PI);
             
             // Velocity in deg/s (re-calculation based on original)
             int32_t velocity = static_cast<int32_t>(syncRead_->getData(motor_ids_[i], ADDR_PRESENT_VELOCITY, 4));
             double vel_rpm = velocity * 0.229;
-            vel_msg.data[i] = vel_rpm * 6.0;
+            vel_msg_.data.push_back(vel_rpm * 6.0);
         }
         
-        position_pub_->publish(pos_msg);
-        velocity_pub_->publish(vel_msg);
+        position_pub_->publish(pos_msg_);
+        velocity_pub_->publish(vel_msg_);
     }
     
     uint8_t control_mode_;
@@ -246,6 +260,10 @@ private:
     // Thread-safe storage for commands
     std::vector<double> goal_command_storage_; // Stores raw command values (16-bit current or 32-bit position count)
     std::mutex goal_mutex_; // Mutex for goal_command_storage_
+    
+    // Pre-allocated message objects to avoid allocations in loop
+    std_msgs::msg::Float64MultiArray pos_msg_;
+    std_msgs::msg::Float64MultiArray vel_msg_;
 
     dynamixel::PortHandler *portHandler_;
     dynamixel::PacketHandler *packetHandler_;
