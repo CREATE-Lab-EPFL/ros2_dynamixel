@@ -5,7 +5,9 @@
 #include <vector>
 #include <mutex> // Added for thread-safe storage
 
+#define ADDR_RETURN_DELAY_TIME 9
 #define ADDR_OPERATING_MODE 11
+#define ADDR_STATUS_RETURN_LEVEL 68
 #define ADDR_TORQUE_ENABLE 64
 #define ADDR_GOAL_CURRENT 102
 #define ADDR_GOAL_POSITION 116
@@ -50,12 +52,13 @@ public:
         portHandler_ = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
         packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
         
-        if (!portHandler_->openPort() || !portHandler_->setBaudRate(57600)) {
+        if (!portHandler_->openPort() || !portHandler_->setBaudRate(1000000)) {
             RCLCPP_ERROR(this->get_logger(), "Port initialization failed");
             return;
         }
         
-        portHandler_->setPacketTimeout(5.0);
+        // Reduce timeout to 10ms for 1Mbps
+        portHandler_->setPacketTimeout(10.0);
         
         syncRead_ = new dynamixel::GroupSyncRead(portHandler_, packetHandler_, 
                                                   ADDR_PRESENT_VELOCITY, 8);
@@ -92,9 +95,10 @@ public:
         velocity_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
             "/joint_velocities", 10);
         
-        // Set to lowest possible value to minimize OS scheduling delay
+        // 1ms timer (1000Hz) - achievable at 1Mbps with 2 motors
+        // At 1Mbps: ~60 bytes per cycle = ~0.6ms, leaving headroom for processing
         timer_ = this->create_wall_timer(
-            std::chrono::microseconds(1), // Aggressive Timer (1)
+            std::chrono::microseconds(1000),
             std::bind(&DynamixelNode::publishState, this));
         
         RCLCPP_INFO(this->get_logger(), "Dynamixel node started: %zu motors in %s mode", 
@@ -117,11 +121,21 @@ private:
     void setupMotor(uint8_t id)
     {
         uint8_t dxl_error = 0;
+        
+        // Critical: Set return delay time to 0 for minimum latency (default is 250 = 500us)
+        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_RETURN_DELAY_TIME, 0, &dxl_error);
+        
+        // Critical: Set status return level to 1 (only respond to READ, not WRITE)
+        // This eliminates status packets from SyncWrite, reducing communication overhead
+        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_STATUS_RETURN_LEVEL, 1, &dxl_error);
+        
         // Set operating mode
         packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_OPERATING_MODE, 
                                        control_mode_, &dxl_error);
         // Enable torque
         packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_TORQUE_ENABLE, 1, &dxl_error);
+        
+        RCLCPP_INFO(this->get_logger(), "Motor %d optimized: return_delay=0, status_level=1", id);
     }
     
     // 1. Synchronization of Communication: Callback Change
