@@ -16,6 +16,7 @@
 
 #define CURRENT_CONTROL_MODE 0
 #define POSITION_CONTROL_MODE 4
+#define EXTENDED_POSITION_CONTROL_MODE 4  // Same as position mode, but with extended range
 #define PROTOCOL_VERSION 2.0
 #define KT 0.000909  // Nm/mA
 #define PI 3.14159265359
@@ -35,7 +36,7 @@ public:
         
         // Set control mode
         if (mode == "position") {
-            control_mode_ = POSITION_CONTROL_MODE;
+            control_mode_ = EXTENDED_POSITION_CONTROL_MODE;  // Use extended position mode
             goal_addr_ = ADDR_GOAL_POSITION;
             goal_size_ = 4;
         } else {
@@ -48,8 +49,7 @@ public:
             motor_ids_.push_back(static_cast<uint8_t>(id));
         }
         
-        // Initialize thread-safe storage for commands
-        goal_command_storage_.resize(motor_ids_.size(), 0.0);
+        // Command storage will be initialized after reading initial positions
 
         portHandler_ = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
         packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
@@ -72,15 +72,36 @@ public:
         syncWrite_ = new dynamixel::GroupSyncWrite(portHandler_, packetHandler_,
                                                     goal_addr_, goal_size_);
         
-        // Read initial positions as zero reference
+        // Read initial positions as zero reference (raw counts)
+        initial_positions_raw_.resize(motor_ids_.size());
         initial_positions_.resize(motor_ids_.size());
-        syncRead_->txRxPacket();
+        
+        // Read present position using individual reads to ensure accurate initial values
         for (size_t i = 0; i < motor_ids_.size(); i++) {
-            uint32_t position = syncRead_->getData(motor_ids_[i], ADDR_PRESENT_POSITION, 4);
-            // This calculation is preserved from original for consistency
-            initial_positions_[i] = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI; 
+            uint8_t dxl_error = 0;
+            uint32_t position = 0;
+            int comm_result = packetHandler_->read4ByteTxRx(portHandler_, motor_ids_[i], 
+                                                             ADDR_PRESENT_POSITION, &position, &dxl_error);
+            if (comm_result == COMM_SUCCESS) {
+                // Store raw position count for extended position mode
+                initial_positions_raw_[i] = static_cast<int32_t>(position);
+                // Store as radians for compatibility
+                initial_positions_[i] = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI;
+                RCLCPP_INFO(this->get_logger(), "Motor %d: Initial position = %d counts (%.2f deg)",
+                           motor_ids_[i], initial_positions_raw_[i], 
+                           initial_positions_[i] * 180.0 / PI);
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "Failed to read initial position for motor %d", motor_ids_[i]);
+            }
         }
-        RCLCPP_INFO(this->get_logger(), "Initial positions set as zero reference");
+        
+        // Initialize command storage with initial positions to prevent movement
+        goal_command_storage_.resize(motor_ids_.size());
+        for (size_t i = 0; i < motor_ids_.size(); i++) {
+            goal_command_storage_[i] = static_cast<double>(initial_positions_raw_[i]);
+        }
+        
+        RCLCPP_INFO(this->get_logger(), "Extended position mode: Zero reference set to current position");
         
         if (control_mode_ == POSITION_CONTROL_MODE) {
             command_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
@@ -157,20 +178,25 @@ private:
         }
     }
     
-    // 1. Synchronization of Communication: Callback Change
-    // Only convert to raw position count and store, no serial communication here.
+    // Position callback for extended position control mode
+    // Commands are relative to the recorded zero position (initial position)
     void positionCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
     {
         if (msg->data.size() != motor_ids_.size()) return;
         
         std::lock_guard<std::mutex> lock(goal_mutex_);
         for (size_t i = 0; i < motor_ids_.size(); i++) {
-            // 3. Position Command Handling Refinement: Store raw count
-            double cmd_rad = msg->data[i] * PI / 180.0;
-            double absolute_rad = initial_positions_[i] + cmd_rad;
-            // Convert absolute rad to raw 32-bit position count
-            int32_t position_count = static_cast<int32_t>((absolute_rad / (2.0 * PI)) * 4096.0); 
-            goal_command_storage_[i] = static_cast<double>(position_count);
+            // Command is in degrees, relative to initial position
+            double cmd_deg = msg->data[i];
+            double cmd_rad = cmd_deg * PI / 180.0;
+            
+            // Convert relative command to raw position count offset
+            int32_t offset_counts = static_cast<int32_t>((cmd_rad / (2.0 * PI)) * 4096.0);
+            
+            // Add offset to initial position (extended position mode supports full 32-bit range)
+            int32_t target_position = initial_positions_raw_[i] + offset_counts;
+            
+            goal_command_storage_[i] = static_cast<double>(target_position);
         }
     }
 
@@ -257,7 +283,8 @@ private:
     uint16_t goal_addr_;
     uint16_t goal_size_;
     std::vector<uint8_t> motor_ids_;
-    std::vector<double> initial_positions_;
+    std::vector<double> initial_positions_;  // Initial positions in radians (for compatibility)
+    std::vector<int32_t> initial_positions_raw_;  // Initial positions in raw counts (for extended mode)
     
     // Thread-safe storage for commands
     std::vector<double> goal_command_storage_; // Stores raw command values (16-bit current or 32-bit position count)
