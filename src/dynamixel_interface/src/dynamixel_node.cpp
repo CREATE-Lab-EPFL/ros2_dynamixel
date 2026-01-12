@@ -82,7 +82,12 @@ public:
             // Store raw position count for extended position mode
             initial_positions_raw_[i] = static_cast<int32_t>(position);
             // This calculation is preserved from original for consistency
-            initial_positions_[i] = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI; 
+            initial_positions_[i] = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI;
+            
+            // For position mode: initialize command storage to current position (prevent initial movement)
+            if (control_mode_ == EXTENDED_POSITION_CONTROL_MODE) {
+                goal_command_storage_[i] = static_cast<double>(initial_positions_raw_[i]);
+            }
         }
         RCLCPP_INFO(this->get_logger(), "Initial positions set as zero reference");
         
