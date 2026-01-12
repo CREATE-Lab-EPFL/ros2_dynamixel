@@ -27,9 +27,11 @@ public:
     {
         this->declare_parameter("motor_ids", std::vector<int64_t>{1, 2});
         this->declare_parameter("control_mode", "torque");
+        this->declare_parameter("baudrate", 1000000);
         
         std::vector<int64_t> motor_ids_int = this->get_parameter("motor_ids").as_integer_array();
         std::string mode = this->get_parameter("control_mode").as_string();
+        int baudrate = this->get_parameter("baudrate").as_int();
         
         // Set control mode
         if (mode == "position") {
@@ -52,7 +54,7 @@ public:
         portHandler_ = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
         packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
         
-        if (!portHandler_->openPort() || !portHandler_->setBaudRate(1000000)) {
+        if (!portHandler_->openPort() || !portHandler_->setBaudRate(baudrate)) {
             RCLCPP_ERROR(this->get_logger(), "Port initialization failed");
             return;
         }
