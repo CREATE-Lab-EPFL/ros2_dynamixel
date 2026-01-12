@@ -49,7 +49,8 @@ public:
             motor_ids_.push_back(static_cast<uint8_t>(id));
         }
         
-        // Command storage will be initialized after reading initial positions
+        // Initialize thread-safe storage for commands
+        goal_command_storage_.resize(motor_ids_.size(), 0.0);
 
         portHandler_ = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
         packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
@@ -72,36 +73,18 @@ public:
         syncWrite_ = new dynamixel::GroupSyncWrite(portHandler_, packetHandler_,
                                                     goal_addr_, goal_size_);
         
-        // Read initial positions as zero reference (raw counts)
+        // Read initial positions as zero reference
         initial_positions_raw_.resize(motor_ids_.size());
         initial_positions_.resize(motor_ids_.size());
-        
-        // Read present position using individual reads to ensure accurate initial values
+        syncRead_->txRxPacket();
         for (size_t i = 0; i < motor_ids_.size(); i++) {
-            uint8_t dxl_error = 0;
-            uint32_t position = 0;
-            int comm_result = packetHandler_->read4ByteTxRx(portHandler_, motor_ids_[i], 
-                                                             ADDR_PRESENT_POSITION, &position, &dxl_error);
-            if (comm_result == COMM_SUCCESS) {
-                // Store raw position count for extended position mode
-                initial_positions_raw_[i] = static_cast<int32_t>(position);
-                // Store as radians for compatibility
-                initial_positions_[i] = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI;
-                RCLCPP_INFO(this->get_logger(), "Motor %d: Initial position = %d counts (%.2f deg)",
-                           motor_ids_[i], initial_positions_raw_[i], 
-                           initial_positions_[i] * 180.0 / PI);
-            } else {
-                RCLCPP_ERROR(this->get_logger(), "Failed to read initial position for motor %d", motor_ids_[i]);
-            }
+            uint32_t position = syncRead_->getData(motor_ids_[i], ADDR_PRESENT_POSITION, 4);
+            // Store raw position count for extended position mode
+            initial_positions_raw_[i] = static_cast<int32_t>(position);
+            // This calculation is preserved from original for consistency
+            initial_positions_[i] = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI; 
         }
-        
-        // Initialize command storage with initial positions to prevent movement
-        goal_command_storage_.resize(motor_ids_.size());
-        for (size_t i = 0; i < motor_ids_.size(); i++) {
-            goal_command_storage_[i] = static_cast<double>(initial_positions_raw_[i]);
-        }
-        
-        RCLCPP_INFO(this->get_logger(), "Extended position mode: Zero reference set to current position");
+        RCLCPP_INFO(this->get_logger(), "Initial positions set as zero reference");
         
         if (control_mode_ == POSITION_CONTROL_MODE) {
             command_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
