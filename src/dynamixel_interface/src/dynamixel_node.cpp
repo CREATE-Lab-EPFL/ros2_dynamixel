@@ -228,8 +228,12 @@ private:
         }
         
         // Execute Sync Write (status return level = 1 means no response, so this is fast)
-        syncWrite_->txPacket(); 
-        
+        syncWrite_->txPacket();
+
+        // Small delay to let motors finish processing the write command
+        // before reading state (prevents bus contention)
+        usleep(100);  // 100 microseconds
+
         // --- 2. Sync Read (State) ---
         // Execute Sync Read immediately after Sync Write
         int comm_result = syncRead_->txRxPacket();
