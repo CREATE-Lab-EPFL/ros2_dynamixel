@@ -18,7 +18,7 @@
 #define POSITION_CONTROL_MODE 4
 #define EXTENDED_POSITION_CONTROL_MODE 4  // Same as position mode, but with extended range
 #define PROTOCOL_VERSION 2.0
-#define KT 0.000909  // Nm/mA
+#define KT 0.00115  // Nm/mA
 #define PI 3.14159265359
 
 class DynamixelNode : public rclcpp::Node
