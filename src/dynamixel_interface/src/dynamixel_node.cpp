@@ -1,6 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
-#include <dynamixel_sdk.h>
+#include <dynamixel_sdk/dynamixel_sdk.h>
 #include <memory>
 #include <vector>
 #include <mutex> // Added for thread-safe storage
