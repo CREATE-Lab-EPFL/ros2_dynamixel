@@ -29,10 +29,12 @@ public:
         this->declare_parameter("motor_ids", std::vector<int64_t>{1, 2});
         this->declare_parameter("control_mode", "torque");
         this->declare_parameter("baudrate", 1000000);
-        
+        this->declare_parameter("velocity_filter_alpha", 0.1);
+
         std::vector<int64_t> motor_ids_int = this->get_parameter("motor_ids").as_integer_array();
         std::string mode = this->get_parameter("control_mode").as_string();
         int baudrate = this->get_parameter("baudrate").as_int();
+        velocity_filter_alpha_ = this->get_parameter("velocity_filter_alpha").as_double();
         
         // Set control mode
         if (mode == "position") {
@@ -51,6 +53,9 @@ public:
         
         // Initialize thread-safe storage for commands
         goal_command_storage_.resize(motor_ids_.size(), 0.0);
+
+        // Initialize EMA-filtered velocity state (one per motor)
+        filtered_velocities_.resize(motor_ids_.size(), 0.0);
 
         portHandler_ = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
         packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
@@ -264,7 +269,12 @@ private:
             // Velocity in deg/s (re-calculation based on original)
             int32_t velocity = static_cast<int32_t>(syncRead_->getData(motor_ids_[i], ADDR_PRESENT_VELOCITY, 4));
             double vel_rpm = velocity * 0.229;
-            vel_msg_.data.push_back(vel_rpm * 6.0);
+            double vel_deg_s = vel_rpm * 6.0;
+
+            // EMA low-pass filter: y[n] = a*x[n] + (1-a)*y[n-1]
+            filtered_velocities_[i] = velocity_filter_alpha_ * vel_deg_s
+                                    + (1.0 - velocity_filter_alpha_) * filtered_velocities_[i];
+            vel_msg_.data.push_back(filtered_velocities_[i]);
         }
         
         position_pub_->publish(pos_msg_);
@@ -281,6 +291,10 @@ private:
     // Thread-safe storage for commands
     std::vector<double> goal_command_storage_; // Stores raw command values (16-bit current or 32-bit position count)
     std::mutex goal_mutex_; // Mutex for goal_command_storage_
+
+    // EMA velocity filter state
+    std::vector<double> filtered_velocities_;
+    double velocity_filter_alpha_;
     
     // Pre-allocated message objects to avoid allocations in loop
     std_msgs::msg::Float64MultiArray pos_msg_;
