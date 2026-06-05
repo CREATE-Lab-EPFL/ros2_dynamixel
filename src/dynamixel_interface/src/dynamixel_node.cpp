@@ -3,7 +3,7 @@
 #include <dynamixel_sdk/dynamixel_sdk.h>
 #include <memory>
 #include <vector>
-#include <mutex> // Added for thread-safe storage
+#include <mutex>
 
 #define ADDR_RETURN_DELAY_TIME 9
 #define ADDR_OPERATING_MODE 11
@@ -15,8 +15,7 @@
 #define ADDR_PRESENT_VELOCITY 128
 
 #define CURRENT_CONTROL_MODE 0
-#define POSITION_CONTROL_MODE 4
-#define EXTENDED_POSITION_CONTROL_MODE 4  // Same as position mode, but with extended range
+#define EXTENDED_POSITION_CONTROL_MODE 4
 #define PROTOCOL_VERSION 2.0
 #define KT 0.00115  // Nm/mA
 #define PI 3.14159265359
@@ -27,283 +26,276 @@ public:
     DynamixelNode() : Node("dynamixel_node")
     {
         this->declare_parameter("motor_ids", std::vector<int64_t>{1, 2});
+        this->declare_parameter("position_motor_ids", std::vector<int64_t>{});
         this->declare_parameter("control_mode", "torque");
         this->declare_parameter("baudrate", 1000000);
         this->declare_parameter("velocity_filter_alpha", 0.1);
 
-        std::vector<int64_t> motor_ids_int = this->get_parameter("motor_ids").as_integer_array();
-        std::string mode = this->get_parameter("control_mode").as_string();
-        int baudrate = this->get_parameter("baudrate").as_int();
+        std::vector<int64_t> motor_ids_int     = this->get_parameter("motor_ids").as_integer_array();
+        std::vector<int64_t> pos_ids_int        = this->get_parameter("position_motor_ids").as_integer_array();
+        std::string          mode               = this->get_parameter("control_mode").as_string();
+        int                  baudrate           = this->get_parameter("baudrate").as_int();
         velocity_filter_alpha_ = this->get_parameter("velocity_filter_alpha").as_double();
-        
-        // Set control mode
-        if (mode == "position") {
-            control_mode_ = EXTENDED_POSITION_CONTROL_MODE;  // Use extended position mode
-            goal_addr_ = ADDR_GOAL_POSITION;
-            goal_size_ = 4;
+
+        // When position_motor_ids is provided, motor_ids are always torque-controlled
+        // and position_motor_ids are position-controlled (mixed mode).
+        // Without position_motor_ids, control_mode applies to all motor_ids (backwards compat).
+        bool mixed_mode = !pos_ids_int.empty();
+
+        if (mixed_mode) {
+            // motor_ids → torque (current) control
+            torque_mode_ = true;
+            for (auto id : motor_ids_int)
+                motor_ids_.push_back(static_cast<uint8_t>(id));
+            for (auto id : pos_ids_int)
+                pos_motor_ids_.push_back(static_cast<uint8_t>(id));
         } else {
-            control_mode_ = CURRENT_CONTROL_MODE;
-            goal_addr_ = ADDR_GOAL_CURRENT;
-            goal_size_ = 2;
+            // Backwards-compatible single-mode: all motor_ids use control_mode
+            torque_mode_ = (mode != "position");
+            for (auto id : motor_ids_int)
+                motor_ids_.push_back(static_cast<uint8_t>(id));
         }
-        
-        for (auto id : motor_ids_int) {
-            motor_ids_.push_back(static_cast<uint8_t>(id));
-        }
-        
-        // Initialize thread-safe storage for commands
+
         goal_command_storage_.resize(motor_ids_.size(), 0.0);
-
-        // Initialize EMA-filtered velocity state (one per motor)
         filtered_velocities_.resize(motor_ids_.size(), 0.0);
+        pos_hold_raw_.resize(pos_motor_ids_.size(), 0);
 
-        portHandler_ = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
+        portHandler_  = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
         packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
-        
+
         if (!portHandler_->openPort() || !portHandler_->setBaudRate(baudrate)) {
             RCLCPP_ERROR(this->get_logger(), "Port initialization failed");
             return;
         }
-        
-        // Reduce timeout to 10ms for 1Mbps
         portHandler_->setPacketTimeout(10.0);
-        
-        syncRead_ = new dynamixel::GroupSyncRead(portHandler_, packetHandler_, 
+
+        // SyncRead covers torque motors only (position motors don't need velocity feedback)
+        syncRead_ = new dynamixel::GroupSyncRead(portHandler_, packetHandler_,
                                                   ADDR_PRESENT_VELOCITY, 8);
         for (auto id : motor_ids_) {
             syncRead_->addParam(id);
-            setupMotor(id);
+            if (torque_mode_)
+                setupTorqueMotor(id);
+            else
+                setupPositionMotor(id);
         }
-        
-        syncWrite_ = new dynamixel::GroupSyncWrite(portHandler_, packetHandler_,
-                                                    goal_addr_, goal_size_);
-        
-        // Read initial positions as zero reference
+
+        // SyncWrite for torque motors (goal_current, 2 bytes)
+        uint16_t w_addr = torque_mode_ ? ADDR_GOAL_CURRENT   : ADDR_GOAL_POSITION;
+        uint16_t w_size = torque_mode_ ? 2                    : 4;
+        syncWrite_ = new dynamixel::GroupSyncWrite(portHandler_, packetHandler_, w_addr, w_size);
+
+        // SyncWrite for position-hold motors (only in mixed mode)
+        syncWritePos_ = nullptr;
+        if (!pos_motor_ids_.empty()) {
+            syncWritePos_ = new dynamixel::GroupSyncWrite(portHandler_, packetHandler_,
+                                                           ADDR_GOAL_POSITION, 4);
+        }
+
+        // Read initial positions for torque motors (zero reference)
         initial_positions_raw_.resize(motor_ids_.size());
         initial_positions_.resize(motor_ids_.size());
         syncRead_->txRxPacket();
         for (size_t i = 0; i < motor_ids_.size(); i++) {
-            uint32_t position = syncRead_->getData(motor_ids_[i], ADDR_PRESENT_POSITION, 4);
-            // Store raw position count for extended position mode
-            initial_positions_raw_[i] = static_cast<int32_t>(position);
-            // This calculation is preserved from original for consistency
-            initial_positions_[i] = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI;
-            
-            // For position mode: initialize command storage to current position (prevent initial movement)
-            if (control_mode_ == EXTENDED_POSITION_CONTROL_MODE) {
+            uint32_t pos = syncRead_->getData(motor_ids_[i], ADDR_PRESENT_POSITION, 4);
+            initial_positions_raw_[i] = static_cast<int32_t>(pos);
+            initial_positions_[i]     = (static_cast<int32_t>(pos) / 4096.0) * 2.0 * PI;
+            if (!torque_mode_)
                 goal_command_storage_[i] = static_cast<double>(initial_positions_raw_[i]);
-            }
         }
-        RCLCPP_INFO(this->get_logger(), "Initial positions set as zero reference");
-        
-        if (control_mode_ == POSITION_CONTROL_MODE) {
-            command_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-                "/goal_position", 10,
-                std::bind(&DynamixelNode::positionCallback, this, std::placeholders::_1));
-        } else {
+
+        // Read and hold initial positions for position motors (mixed mode)
+        for (size_t i = 0; i < pos_motor_ids_.size(); i++) {
+            setupPositionMotor(pos_motor_ids_[i]);
+            uint32_t pos_raw = 0;
+            uint8_t  dxl_err = 0;
+            packetHandler_->read4ByteTxRx(portHandler_, pos_motor_ids_[i],
+                                           ADDR_PRESENT_POSITION, &pos_raw, &dxl_err);
+            pos_hold_raw_[i] = static_cast<int32_t>(pos_raw);
+            RCLCPP_INFO(this->get_logger(), "Position motor %d: holding at raw %d",
+                        pos_motor_ids_[i], pos_hold_raw_[i]);
+        }
+
+        // Subscriptions
+        if (torque_mode_) {
             command_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
                 "/goal_torque", 10,
                 std::bind(&DynamixelNode::torqueCallback, this, std::placeholders::_1));
+        } else {
+            command_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+                "/goal_position", 10,
+                std::bind(&DynamixelNode::positionCallback, this, std::placeholders::_1));
         }
-        
-        position_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
-            "/joint_positions", 10);
-        velocity_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>(
-            "/joint_velocities", 10);
-        
-        // Pre-allocate message objects to avoid allocations in loop
+
+        position_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/joint_positions", 10);
+        velocity_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/joint_velocities", 10);
+
         pos_msg_.data.reserve(motor_ids_.size());
         vel_msg_.data.reserve(motor_ids_.size());
-        
-        // 1ms timer (1000Hz) - achievable at 1Mbps with 2 motors
-        // At 1Mbps: ~60 bytes per cycle = ~0.6ms, leaving headroom for processing
+
         timer_ = this->create_wall_timer(
             std::chrono::microseconds(1000),
             std::bind(&DynamixelNode::publishState, this));
-        
-        RCLCPP_INFO(this->get_logger(), "Dynamixel node started: %zu motors in %s mode", 
-                    motor_ids_.size(), mode.c_str());
+
+        RCLCPP_INFO(this->get_logger(),
+            "Dynamixel node: %zu torque motor(s), %zu position motor(s) — mode=%s",
+            motor_ids_.size(), pos_motor_ids_.size(), mode.c_str());
     }
-    
+
     ~DynamixelNode()
     {
-        // Disable torque on motors before exit
         for (auto id : motor_ids_) {
             uint8_t dxl_error = 0;
             packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_TORQUE_ENABLE, 0, &dxl_error);
         }
+        // Position motors stay enabled — they hold position until power-off
         delete syncRead_;
         delete syncWrite_;
+        if (syncWritePos_) delete syncWritePos_;
         portHandler_->closePort();
     }
 
 private:
-    void setupMotor(uint8_t id)
+    void setupTorqueMotor(uint8_t id)
     {
         uint8_t dxl_error = 0;
-        
-        // Critical: Set return delay time to 0 for minimum latency (default is 250 = 500us)
         packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_RETURN_DELAY_TIME, 0, &dxl_error);
-        
-        // Critical: Set status return level to 1 (only respond to READ, not WRITE)
-        // This eliminates status packets from SyncWrite, reducing communication overhead
         packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_STATUS_RETURN_LEVEL, 1, &dxl_error);
-        
-        // Set operating mode
-        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_OPERATING_MODE, 
-                                       control_mode_, &dxl_error);
-        // Enable torque
+        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_OPERATING_MODE,
+                                       CURRENT_CONTROL_MODE, &dxl_error);
         packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_TORQUE_ENABLE, 1, &dxl_error);
-        
-        RCLCPP_INFO(this->get_logger(), "Motor %d optimized: return_delay=0, status_level=1", id);
+        RCLCPP_INFO(this->get_logger(), "Torque motor %d: current mode", id);
     }
-    
-    // 1. Synchronization of Communication: Callback Change
-    // Only store command data, no serial communication here.
+
+    void setupPositionMotor(uint8_t id)
+    {
+        uint8_t dxl_error = 0;
+        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_RETURN_DELAY_TIME, 0, &dxl_error);
+        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_STATUS_RETURN_LEVEL, 1, &dxl_error);
+        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_OPERATING_MODE,
+                                       EXTENDED_POSITION_CONTROL_MODE, &dxl_error);
+        packetHandler_->write1ByteTxRx(portHandler_, id, ADDR_TORQUE_ENABLE, 1, &dxl_error);
+        RCLCPP_INFO(this->get_logger(), "Position motor %d: extended position mode", id);
+    }
+
     void torqueCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
     {
         if (msg->data.size() != motor_ids_.size()) return;
-        
         std::lock_guard<std::mutex> lock(goal_mutex_);
-        for (size_t i = 0; i < motor_ids_.size(); i++) {
-            // Convert torque (Nm) to raw current unit (mA) and store as double/float
-            goal_command_storage_[i] = msg->data[i] / KT; 
-        }
+        for (size_t i = 0; i < motor_ids_.size(); i++)
+            goal_command_storage_[i] = msg->data[i] / KT;
     }
-    
-    // Position callback for extended position control mode
-    // Commands are relative to the recorded zero position (initial position)
+
     void positionCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
     {
         if (msg->data.size() != motor_ids_.size()) return;
-        
         std::lock_guard<std::mutex> lock(goal_mutex_);
         for (size_t i = 0; i < motor_ids_.size(); i++) {
-            // Command is in degrees, relative to initial position
-            double cmd_deg = msg->data[i];
-            double cmd_rad = cmd_deg * PI / 180.0;
-            
-            // Convert relative command to raw position count offset
-            int32_t offset_counts = static_cast<int32_t>((cmd_rad / (2.0 * PI)) * 4096.0);
-            
-            // Add offset to initial position (extended position mode supports full 32-bit range)
-            int32_t target_position = initial_positions_raw_[i] + offset_counts;
-            
-            goal_command_storage_[i] = static_cast<double>(target_position);
+            double cmd_rad    = msg->data[i] * PI / 180.0;
+            int32_t offset    = static_cast<int32_t>((cmd_rad / (2.0 * PI)) * 4096.0);
+            goal_command_storage_[i] = static_cast<double>(initial_positions_raw_[i] + offset);
         }
     }
 
-    // 1. Synchronization of Communication: Timer Loop Synchronization
-    // Now handles Sync Write AND Sync Read back-to-back.
     void publishState()
     {
         std::vector<double> current_goals;
-        
-        // --- 1. Sync Write (Command) ---
-        // Safely retrieve the latest goal commands
         {
             std::lock_guard<std::mutex> lock(goal_mutex_);
             current_goals = goal_command_storage_;
         }
-        
+
+        // --- Write commands to torque / position motors ---
         syncWrite_->clearParam();
         for (size_t i = 0; i < motor_ids_.size(); i++) {
             uint8_t id = motor_ids_[i];
-            
-            if (control_mode_ == POSITION_CONTROL_MODE) {
-                // Position mode: Command is raw 32-bit position count (stored as double)
-                int32_t position = static_cast<int32_t>(current_goals[i]);
-                
-                // Centralize byte-splitting logic here
-                uint8_t param[4] = {
-                    DXL_LOBYTE(DXL_LOWORD(position)),
-                    DXL_HIBYTE(DXL_LOWORD(position)),
-                    DXL_LOBYTE(DXL_HIWORD(position)),
-                    DXL_HIBYTE(DXL_HIWORD(position))
-                };
-                syncWrite_->addParam(id, param);
-                
-            } else { 
-                // Current (Torque) mode: Command is raw 16-bit current unit (stored as double)
+            if (torque_mode_) {
                 int16_t current = static_cast<int16_t>(current_goals[i]);
-                
                 uint8_t param[2] = {DXL_LOBYTE(current), DXL_HIBYTE(current)};
+                syncWrite_->addParam(id, param);
+            } else {
+                int32_t pos = static_cast<int32_t>(current_goals[i]);
+                uint8_t param[4] = {
+                    DXL_LOBYTE(DXL_LOWORD(pos)), DXL_HIBYTE(DXL_LOWORD(pos)),
+                    DXL_LOBYTE(DXL_HIWORD(pos)), DXL_HIBYTE(DXL_HIWORD(pos))
+                };
                 syncWrite_->addParam(id, param);
             }
         }
-        
-        // Execute Sync Write (status return level = 1 means no response, so this is fast)
         syncWrite_->txPacket();
 
-        // Small delay to let motors finish processing the write command
-        // before reading state (prevents bus contention)
-        usleep(100);  // 100 microseconds
+        // --- Hold position motors at their initial positions (mixed mode) ---
+        if (syncWritePos_ && !pos_motor_ids_.empty()) {
+            syncWritePos_->clearParam();
+            for (size_t i = 0; i < pos_motor_ids_.size(); i++) {
+                int32_t pos = pos_hold_raw_[i];
+                uint8_t param[4] = {
+                    DXL_LOBYTE(DXL_LOWORD(pos)), DXL_HIBYTE(DXL_LOWORD(pos)),
+                    DXL_LOBYTE(DXL_HIWORD(pos)), DXL_HIBYTE(DXL_HIWORD(pos))
+                };
+                syncWritePos_->addParam(pos_motor_ids_[i], param);
+            }
+            syncWritePos_->txPacket();
+        }
 
-        // --- 2. Sync Read (State) ---
-        // Execute Sync Read immediately after Sync Write
+        usleep(100);
+
+        // --- Read state from motor_ids_ ---
         int comm_result = syncRead_->txRxPacket();
         if (comm_result != COMM_SUCCESS) {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                                  "SyncRead failed: %d", comm_result);
             return;
         }
-        
-        // Reuse message objects to avoid allocations
+
         pos_msg_.data.clear();
         vel_msg_.data.clear();
         pos_msg_.data.reserve(motor_ids_.size());
         vel_msg_.data.reserve(motor_ids_.size());
-        
+
         for (size_t i = 0; i < motor_ids_.size(); i++) {
             if (!syncRead_->isAvailable(motor_ids_[i], ADDR_PRESENT_VELOCITY, 8)) {
                 RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
                                      "Data not available for motor %d", motor_ids_[i]);
                 return;
             }
-            
-            // Position in degrees (re-calculation based on original)
-            uint32_t position = syncRead_->getData(motor_ids_[i], ADDR_PRESENT_POSITION, 4);
-            double absolute_rad = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI;
-            pos_msg_.data.push_back((absolute_rad - initial_positions_[i]) * 180.0 / PI);
-            
-            // Velocity in deg/s (re-calculation based on original)
-            int32_t velocity = static_cast<int32_t>(syncRead_->getData(motor_ids_[i], ADDR_PRESENT_VELOCITY, 4));
-            double vel_rpm = velocity * 0.229;
-            double vel_deg_s = vel_rpm * 6.0;
 
-            // EMA low-pass filter: y[n] = a*x[n] + (1-a)*y[n-1]
+            uint32_t position     = syncRead_->getData(motor_ids_[i], ADDR_PRESENT_POSITION, 4);
+            double   absolute_rad = (static_cast<int32_t>(position) / 4096.0) * 2.0 * PI;
+            pos_msg_.data.push_back((absolute_rad - initial_positions_[i]) * 180.0 / PI);
+
+            int32_t velocity = static_cast<int32_t>(
+                syncRead_->getData(motor_ids_[i], ADDR_PRESENT_VELOCITY, 4));
+            double vel_deg_s = velocity * 0.229 * 6.0;
+
             filtered_velocities_[i] = velocity_filter_alpha_ * vel_deg_s
                                     + (1.0 - velocity_filter_alpha_) * filtered_velocities_[i];
             vel_msg_.data.push_back(filtered_velocities_[i]);
         }
-        
+
         position_pub_->publish(pos_msg_);
         velocity_pub_->publish(vel_msg_);
     }
-    
-    uint8_t control_mode_;
-    uint16_t goal_addr_;
-    uint16_t goal_size_;
-    std::vector<uint8_t> motor_ids_;
-    std::vector<double> initial_positions_;  // Initial positions in radians (for compatibility)
-    std::vector<int32_t> initial_positions_raw_;  // Initial positions in raw counts (for extended mode)
-    
-    // Thread-safe storage for commands
-    std::vector<double> goal_command_storage_; // Stores raw command values (16-bit current or 32-bit position count)
-    std::mutex goal_mutex_; // Mutex for goal_command_storage_
 
-    // EMA velocity filter state
-    std::vector<double> filtered_velocities_;
-    double velocity_filter_alpha_;
-    
-    // Pre-allocated message objects to avoid allocations in loop
-    std_msgs::msg::Float64MultiArray pos_msg_;
-    std_msgs::msg::Float64MultiArray vel_msg_;
+    bool                    torque_mode_;
+    std::vector<uint8_t>    motor_ids_;
+    std::vector<uint8_t>    pos_motor_ids_;
+    std::vector<int32_t>    initial_positions_raw_;
+    std::vector<double>     initial_positions_;
+    std::vector<int32_t>    pos_hold_raw_;
+    std::vector<double>     goal_command_storage_;
+    std::mutex              goal_mutex_;
+    std::vector<double>     filtered_velocities_;
+    double                  velocity_filter_alpha_;
 
-    dynamixel::PortHandler *portHandler_;
+    std_msgs::msg::Float64MultiArray pos_msg_, vel_msg_;
+
+    dynamixel::PortHandler   *portHandler_;
     dynamixel::PacketHandler *packetHandler_;
-    dynamixel::GroupSyncRead *syncRead_;
+    dynamixel::GroupSyncRead  *syncRead_;
     dynamixel::GroupSyncWrite *syncWrite_;
+    dynamixel::GroupSyncWrite *syncWritePos_;
+
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr command_sub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr position_pub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr velocity_pub_;
