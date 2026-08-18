@@ -28,6 +28,7 @@ public:
         this->declare_parameter("motor_ids", std::vector<int64_t>{1, 2});
         this->declare_parameter("position_motor_ids", std::vector<int64_t>{});
         this->declare_parameter("control_mode", "torque");
+        this->declare_parameter("port", "/dev/ttyUSB0");
         this->declare_parameter("baudrate", 1000000);
         this->declare_parameter("velocity_filter_alpha", 0.1);
         this->declare_parameter("use_kt", true);
@@ -36,6 +37,7 @@ public:
         std::vector<int64_t> motor_ids_int     = this->get_parameter("motor_ids").as_integer_array();
         std::vector<int64_t> pos_ids_int        = this->get_parameter("position_motor_ids").as_integer_array();
         std::string          mode               = this->get_parameter("control_mode").as_string();
+        std::string          port               = this->get_parameter("port").as_string();
         int                  baudrate           = this->get_parameter("baudrate").as_int();
         velocity_filter_alpha_ = this->get_parameter("velocity_filter_alpha").as_double();
         use_kt_ = this->get_parameter("use_kt").as_bool();
@@ -64,7 +66,7 @@ public:
         filtered_velocities_.resize(motor_ids_.size(), 0.0);
         pos_hold_raw_.resize(pos_motor_ids_.size(), 0);
 
-        portHandler_  = dynamixel::PortHandler::getPortHandler("/dev/ttyUSB0");
+        portHandler_  = dynamixel::PortHandler::getPortHandler(port.c_str());
         packetHandler_ = dynamixel::PacketHandler::getPacketHandler(PROTOCOL_VERSION);
 
         if (!portHandler_->openPort() || !portHandler_->setBaudRate(baudrate)) {
