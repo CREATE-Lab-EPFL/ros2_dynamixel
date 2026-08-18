@@ -17,7 +17,7 @@
 #define CURRENT_CONTROL_MODE 0
 #define EXTENDED_POSITION_CONTROL_MODE 4
 #define PROTOCOL_VERSION 2.0
-#define KT 0.00115  // Nm/mA
+#define DEFAULT_KT 0.00115  // Nm/mA
 #define PI 3.14159265359
 
 class DynamixelNode : public rclcpp::Node
@@ -30,12 +30,16 @@ public:
         this->declare_parameter("control_mode", "torque");
         this->declare_parameter("baudrate", 1000000);
         this->declare_parameter("velocity_filter_alpha", 0.1);
+        this->declare_parameter("use_kt", true);
+        this->declare_parameter("kt", DEFAULT_KT);
 
         std::vector<int64_t> motor_ids_int     = this->get_parameter("motor_ids").as_integer_array();
         std::vector<int64_t> pos_ids_int        = this->get_parameter("position_motor_ids").as_integer_array();
         std::string          mode               = this->get_parameter("control_mode").as_string();
         int                  baudrate           = this->get_parameter("baudrate").as_int();
         velocity_filter_alpha_ = this->get_parameter("velocity_filter_alpha").as_double();
+        use_kt_ = this->get_parameter("use_kt").as_bool();
+        kt_ = this->get_parameter("kt").as_double();
 
         // When position_motor_ids is provided, motor_ids are always torque-controlled
         // and position_motor_ids are position-controlled (mixed mode).
@@ -182,8 +186,13 @@ private:
     {
         if (msg->data.size() != motor_ids_.size()) return;
         std::lock_guard<std::mutex> lock(goal_mutex_);
-        for (size_t i = 0; i < motor_ids_.size(); i++)
-            goal_command_storage_[i] = msg->data[i] / KT;
+        for (size_t i = 0; i < motor_ids_.size(); i++) {
+            if (use_kt_) {
+                goal_command_storage_[i] = msg->data[i] / kt_;
+            } else {
+                goal_command_storage_[i] = msg->data[i];
+            }
+        }
     }
 
     void positionCallback(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
@@ -287,6 +296,8 @@ private:
     std::mutex              goal_mutex_;
     std::vector<double>     filtered_velocities_;
     double                  velocity_filter_alpha_;
+    bool                    use_kt_;
+    double                  kt_;
 
     std_msgs::msg::Float64MultiArray pos_msg_, vel_msg_;
 
