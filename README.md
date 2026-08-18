@@ -16,7 +16,7 @@ Joint state for `motor_ids` is published at ~1 kHz on `/joint_positions` and `/j
 
 - ROS 2 Humble
 - `dynamixel_sdk` (ROS 2 package)
-- Dynamixel motors connected on `/dev/ttyUSB0` (hardcoded, not a launch parameter)
+- Dynamixel motors connected via a serial adapter (`port` parameter, default `/dev/ttyUSB0`)
 
 ## Build
 
@@ -44,6 +44,7 @@ ros2 run dynamixel_interface dynamixel_node
 | `motor_ids` | `[1, 2]` | IDs of torque-controlled motors |
 | `position_motor_ids` | `[]` | IDs of position-controlled motors in mixed mode |
 | `control_mode` | `"torque"` | `"torque"` or `"position"` — ignored when `position_motor_ids` is non-empty (mixed mode always puts `motor_ids` in torque mode) |
+| `port` | `"/dev/ttyUSB0"` | Serial device path for the Dynamixel bus |
 | `baudrate` | `1000000` | Dynamixel communication baudrate |
 | `velocity_filter_alpha` | `0.1` | Smoothing factor (EMA) for velocity output |
 | `use_kt` | `true` | Enables the `kt` conversion in torque mode |
@@ -117,4 +118,4 @@ ros2 run dynamixel_interface dynamixel_node --ros-args \
 - The correct `kt` depends on the motor series — don't reuse a value across different Dynamixel models.
 - `0.00115` is the calibration for the ADAPT hand/finger motors; other consumers of this package pass their own `kt` at launch (see Examples).
 - With `position_motor_ids` set (mixed mode), position motors hold whatever position they were in at node startup — they are not commandable over ROS.
-- The serial port is hardcoded to `/dev/ttyUSB0`.
+- `port` defaults to `/dev/ttyUSB0`; override it with `-p port:=/dev/ttyUSBx` if more than one Dynamixel bus is connected to the same machine (e.g. running two robots' drivers side by side).
